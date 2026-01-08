@@ -68,7 +68,7 @@ export default function LoginPage() {
   return (
     <>
       <Navbar />
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-black dark:to-gray-900 pt-20 px-4">
+      <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-gray-50 to-gray-100 dark:from-black dark:to-gray-900 pt-20 px-4">
         <div className="w-full max-w-md">
           <div className="bg-white dark:bg-gray-900 shadow-2xl rounded-2xl px-8 pt-10 pb-8 mb-4 border border-gray-200 dark:border-gray-800">
             {/* Header */}
