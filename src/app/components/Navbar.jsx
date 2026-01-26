@@ -35,14 +35,41 @@ function Navbar() {
   };
 
   return (
-    <div className="w-full bg-white text-black absolute top-0 h-20 flex">
+    <div className="w-full bg-white z-100 text-black absolute top-0 h-20 flex">
       <div className="flex justify-between w-full">
         <Link
           href="/"
-          className="p-4 font-bold text-black justify-center items-center mx-16 hover:text-gray-700 transition-colors duration-200"
+          className="py-4 font-bold text-black justify-center items-center mx-10 hover:text-gray-700 transition-colors duration-200"
         >
           INSEE
         </Link>
+        <div className=" flex items-center">
+        <Link
+          href="/"
+          className="py-4 font-bold text-black justify-center items-center mx-10 hover:text-gray-700 transition-colors duration-200"
+        >
+          Home
+        </Link>
+        <Link
+          href="#purpose"
+          className="py-4 font-bold text-black justify-center items-center mx-10 hover:text-gray-700 transition-colors duration-200"
+        >
+          Purpose
+        </Link>
+        <Link
+          href="/"
+          className="py-4 font-bold text-black justify-center items-center mx-10 hover:text-gray-700 transition-colors duration-200"
+        >
+          Features
+        </Link>
+        <Link
+          href="/"
+          className="py-4 font-bold text-black justify-center items-center mx-10 hover:text-gray-700 transition-colors duration-200"
+        >
+          Benefits
+        </Link>
+
+        </div>
 
         <div className="flex mx-16 justify-center items-center gap-3">
           {!user ? (
