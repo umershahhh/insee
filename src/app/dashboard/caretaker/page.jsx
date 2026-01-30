@@ -4,29 +4,16 @@ import { useEffect, useState } from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabaseClient"
-// import "@/lib/leafletIconFix"
 import Navbar from "@/app/components/Navbar"
 
-// ✅ Dynamically import Leaflet components (NO SSR)
-const MapContainer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.MapContainer),
-  { ssr: false }
-)
+// ✅ TEMP cane ID (later this will come from DB mapping)
+const CANE_ID = "fbfea03d-b80e-43c9-af3d-fd8c72779470"
 
-const TileLayer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.TileLayer),
-  { ssr: false }
-)
-
-const Marker = dynamic(
-  () => import("react-leaflet").then((mod) => mod.Marker),
-  { ssr: false }
-)
-
-const Popup = dynamic(
-  () => import("react-leaflet").then((mod) => mod.Popup),
-  { ssr: false }
-)
+// Leaflet (NO SSR)
+const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false })
+const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false })
+const Marker = dynamic(() => import("react-leaflet").then(m => m.Marker), { ssr: false })
+const Popup = dynamic(() => import("react-leaflet").then(m => m.Popup), { ssr: false })
 
 export default function CaretakerDashboard() {
   const router = useRouter()
@@ -35,179 +22,180 @@ export default function CaretakerDashboard() {
   const [authLoading, setAuthLoading] = useState(true)
 
   const [location, setLocation] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [history, setHistory] = useState([])
+
+  const [loadingLocation, setLoadingLocation] = useState(true)
+  const [loadingHistory, setLoadingHistory] = useState(true)
 
   // 🔐 AUTH CHECK
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { user } } = await supabase.auth.getUser()
-
       if (!user) {
         router.replace("/login")
         return
       }
-
       setUser(user)
       setAuthLoading(false)
     }
-
     checkAuth()
   }, [router])
 
-  // 📍 LOCATION FETCH + REALTIME
+  // 📡 SEND CURRENT DEVICE LOCATION (LIVE + HISTORY)
   useEffect(() => {
     if (!user) return
 
-    const fetchLocation = async () => {
-      try {
-        const { data } = await supabase
-          .from("live_location")
-          .select("*")
-          .single()
-
-        setLocation(data)
-      } catch (error) {
-        console.error("Error fetching location:", error)
-      } finally {
-        setIsLoading(false)
-      }
+    if (!navigator.geolocation) {
+      console.error("Geolocation not supported")
+      return
     }
 
-    fetchLocation()
+    const interval = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const { latitude, longitude } = pos.coords
+          const now = new Date().toISOString()
+
+          // 🔴 Live location (1 row per cane)
+          await supabase
+            .from("live_location")
+            .upsert(
+              {
+                cane_id: CANE_ID,
+                latitude,
+                longitude,
+                updated_at: now
+              },
+              { onConflict: "cane_id" }
+            )
+
+          // 🟢 Location history (multiple rows)
+          await supabase
+            .from("location_history")
+            .insert({
+              cane_id: CANE_ID,
+              latitude,
+              longitude,
+              created_at: now
+            })
+        },
+        (err) => console.error("GPS error:", err),
+        { enableHighAccuracy: true }
+      )
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [user])
+
+  // 📍 FETCH LIVE LOCATION + REALTIME
+  useEffect(() => {
+    if (!user) return
+
+    const fetchLiveLocation = async () => {
+      const { data } = await supabase
+        .from("live_location")
+        .select("*")
+        .eq("cane_id", CANE_ID)
+        .maybeSingle()
+
+      setLocation(data)
+      setLoadingLocation(false)
+    }
+
+    fetchLiveLocation()
 
     const channel = supabase
       .channel("live-location")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "live_location" },
-        (payload) => {
-          setLocation(payload.new)
-        }
+        {
+          event: "*",
+          schema: "public",
+          table: "live_location",
+          filter: `cane_id=eq.${CANE_ID}`
+        },
+        payload => setLocation(payload.new)
       )
       .subscribe()
 
     return () => supabase.removeChannel(channel)
   }, [user])
 
-  // ⏳ AUTH LOADING UI
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Checking authentication...</p>
-      </div>
-    )
-  }
+  // 📜 FETCH LOCATION HISTORY
+  useEffect(() => {
+    if (!user) return
 
-  // ⏳ LOCATION LOADING UI
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-linear-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-600 mb-4"></div>
-          <h2 className="text-xl font-semibold text-gray-800 mb-2">
-            Loading Location
-          </h2>
-          <p className="text-gray-600">Waiting for location data...</p>
-        </div>
-      </div>
-    )
-  }
+    const fetchHistory = async () => {
+      const { data, error } = await supabase
+        .from("location_history")
+        .select("latitude, longitude, created_at")
+        .eq("cane_id", CANE_ID)
+        .order("created_at", { ascending: false })
+        .limit(10)
 
-  // 🚫 NO LOCATION UI
-  if (!location) {
-    return (
-      <>
-        <Navbar />
-        <div className="min-h-screen bg-linear-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
-            <div className="text-6xl mb-4">📍</div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-2">
-              No Location Available
-            </h2>
-            <p className="text-gray-600">
-              Waiting for location data to be shared...
-            </p>
-          </div>
-        </div>
-      </>
-    )
-  }
+      if (error) {
+        console.error(error)
+      } else {
+        setHistory(data)
+      }
 
-  // ✅ DASHBOARD UI
+      setLoadingHistory(false)
+    }
+
+    fetchHistory()
+  }, [user])
+
+  // ⏳ LOAD STATES
+  if (authLoading) return <p className="p-10">Checking authentication...</p>
+  if (loadingLocation) return <p className="p-10">Loading live location...</p>
+  if (!location) return <p className="p-10">No live location data</p>
+
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-linear-to-br from-gray-50 to-gray-100 p-4 md:p-8">
-        <div className="max-w-7xl mx-auto">
 
-          {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
-              Caretaker Dashboard
-            </h1>
-            <p className="text-gray-600">Real-time location tracking</p>
-          </div>
+      <div className="p-6">
+        <h1 className="text-3xl font-bold mb-4">Caretaker Dashboard</h1>
 
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
-              <p className="text-sm text-gray-600 font-medium">Latitude</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {location.latitude.toFixed(6)}
-              </p>
-            </div>
+        <p>Latitude: {location.latitude.toFixed(6)}</p>
+        <p>Longitude: {location.longitude.toFixed(6)}</p>
 
-            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
-              <p className="text-sm text-gray-600 font-medium">Longitude</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {location.longitude.toFixed(6)}
-              </p>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-purple-500">
-              <p className="text-sm text-gray-600 font-medium">Status</p>
-              <p className="text-2xl font-bold text-green-600 mt-1">
-                Live
-              </p>
-            </div>
-          </div>
-
-          {/* Map */}
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-            <div className="p-4 border-b">
-              <h2 className="text-xl font-semibold">Live Location Map</h2>
-            </div>
-
-            <div style={{ height: "600px", width: "100%" }}>
-              <MapContainer
-                center={[location.latitude, location.longitude]}
-                zoom={15}
-                style={{ height: "100%", width: "100%" }}
-              >
-                <TileLayer
-                  attribution="© OpenStreetMap contributors"
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-
-                <Marker position={[location.latitude, location.longitude]}>
-                  <Popup>
-                    {location.latitude.toFixed(6)},{" "}
-                    {location.longitude.toFixed(6)}
-                  </Popup>
-                </Marker>
-              </MapContainer>
-            </div>
-          </div>
-
-          {/* Footer Info */}
-          <div className="mt-6 bg-white rounded-xl shadow-md p-4">
-            <p className="text-sm text-gray-600">
-              Last updated:{" "}
-              {new Date(location.updated_at).toLocaleString()}
-            </p>
-          </div>
-
+        <div style={{ height: 500 }} className="mt-4">
+          <MapContainer
+            center={[location.latitude, location.longitude]}
+            zoom={15}
+            style={{ height: "100%", width: "100%" }}
+          >
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <Marker position={[location.latitude, location.longitude]}>
+              <Popup>Live Cane Location</Popup>
+            </Marker>
+          </MapContainer>  
         </div>
+      </div>
+
+      {/* 📜 HISTORY */}
+      <div className="mx-6 mt-6 bg-slate-400 rounded-xl shadow-md p-6">
+        <h3 className="text-lg font-semibold mb-4">Recent Location History</h3>
+
+        {loadingHistory ? (
+          <p className="text-sm text-gray-500">Loading history.</p>
+        ) : history.length === 0 ? (
+          <p className="text-sm text-gray-500">No history data</p>
+        ) : (
+          <div className="space-y-2 text-sm">
+            {history.map((item, index) => (
+              <div key={index} className="flex justify-between border-b pb-1">
+                <span>
+                  {item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}
+                </span>
+                <span className="text-gray-500">
+                  {new Date(item.created_at).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   )
