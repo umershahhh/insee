@@ -1,11 +1,13 @@
+
 import React from 'react'
 
-function page() {
+export default function AdminPage() {
   return (
     <div>
-      admin
+      admin here
     </div>
-  )
+  );
 }
 
-export default page
+
+
