@@ -73,9 +73,7 @@ export default function LoginPage() {
           <div className="bg-white dark:bg-gray-900 shadow-2xl rounded-2xl px-8 pt-10 pb-8 mb-4 border border-gray-200 dark:border-gray-800">
             {/* Header */}
             <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-black dark:bg-white rounded-full mb-4">
-                <span className="text-3xl">🔐</span>
-              </div>
+              
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
                 Welcome Back
               </h2>
